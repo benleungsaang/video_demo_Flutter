@@ -3,6 +3,11 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:video_demo/models/video.dart';
 import 'package:video_demo/services/video_service.dart';
 import 'package:video_demo/pages/video_tags_editor.dart';
+<<<<<<< HEAD
+=======
+import 'dart:io';
+import 'package:video_demo/pages/video_player_page.dart';
+>>>>>>> master
 
 class LocalVideosPage extends StatefulWidget {
   const LocalVideosPage({super.key});
@@ -21,6 +26,20 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
   // 搜索框控制器，用于获取输入内容
   final TextEditingController _searchController = TextEditingController();
 
+<<<<<<< HEAD
+=======
+  // 加载视频缩略图
+  Future<void> _loadThumbnail(Video video) async {
+    if (video.thumbnailPath == null ||
+        !await File(video.thumbnailPath!).exists()) {
+      await VideoService.generateThumbnail(video);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+>>>>>>> master
   @override
   void initState() {
     super.initState();
@@ -166,6 +185,7 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
                         itemCount: _filteredVideos.length,
                         itemBuilder: (context, index) {
                           Video video = _filteredVideos[index];
+<<<<<<< HEAD
                           return ListTile(
                             title: Text(video.name),
                             subtitle: Column(
@@ -248,6 +268,125 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
                           );
                         },
                       ),
+=======
+
+                          // 加载缩略图
+                          _loadThumbnail(video);
+
+                          return InkWell(
+                            // 点击视频项跳转到播放页面
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    VideoPlayerPage(video: video),
+                              ),
+                            ),
+                            child: ListTile(
+                              // 显示视频缩略图
+                              leading: SizedBox(
+                                width: 80,
+                                height: 45,
+                                child: video.thumbnailPath != null
+                                    ? Image.file(
+                                        File(video.thumbnailPath!),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : const Center(
+                                        child: CircularProgressIndicator()),
+                              ),
+                              title: Text(video.name),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                      '格式: ${video.format} | 时长: ${formatDuration(video.duration)} | ${getPathFromNthSlash(video.path, 6)} '),
+                                  if (video.tags.isNotEmpty)
+                                    Wrap(
+                                      spacing: 4,
+                                      children: video.tags
+                                          .map((tag) => Chip(
+                                                label: Text(tag),
+                                                backgroundColor:
+                                                    Colors.blue[100],
+                                                labelStyle: const TextStyle(
+                                                    fontSize: 12),
+                                              ))
+                                          .toList(),
+                                    ),
+                                ],
+                              ),
+                              // 编辑标签按钮
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit,
+                                        color: Colors.blue),
+                                    onPressed: () async {
+                                      final result = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              VideoTagsEditorPage(video: video),
+                                        ),
+                                      );
+                                      if (result == true) {
+                                        loadVideos(); // 编辑后刷新列表
+                                      }
+                                    },
+                                  ),
+                                  // 删除视频按钮
+                                  IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
+                                    onPressed: () async {
+                                      // 保持原有的删除逻辑不变
+                                      bool? confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('确认删除'),
+                                          content: Text(
+                                              '确定要删除视频 "${video.name}" 吗？'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text('取消'),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: const Text('删除'),
+                                              style: TextButton.styleFrom(
+                                                foregroundColor: Colors.red,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirm == true) {
+                                        await VideoService.deleteVideo(video);
+                                        loadVideos(); // 删除后刷新列表
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                                content:
+                                                    Text('已删除: ${video.name}')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+>>>>>>> master
           ),
         ],
       ),

@@ -6,6 +6,12 @@ import 'package:hive/hive.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_demo/models/video.dart';
 import 'package:video_demo/utils/path_utils.dart';
+<<<<<<< HEAD
+=======
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'dart:typed_data';
+import 'package:path/path.dart' as p;
+>>>>>>> master
 
 class VideoService {
   // 获取视频数据库表
@@ -100,4 +106,47 @@ class VideoService {
       throw Exception('删除视频失败: $e');
     }
   }
+<<<<<<< HEAD
+=======
+
+  // 为视频生成缩略图
+  static Future<String?> generateThumbnail(Video video) async {
+    try {
+      // 获取缩略图保存目录（确保目录存在）
+      final thumbnailDir = await PathUtils.unifiedVideoDirectory;
+      await Directory(thumbnailDir).create(recursive: true); // 确保目录存在
+
+      // 生成唯一的缩略图文件名（基于视频文件名）
+      final videoFileName = p.basenameWithoutExtension(video.path);
+      final thumbnailPath = '$thumbnailDir/${videoFileName}_thumb.jpg';
+
+      // 检查缩略图是否已存在，避免重复生成
+      if (await File(thumbnailPath).exists()) {
+        return thumbnailPath;
+      }
+
+      // 调用thumbnailData生成内存中的缩略图（使用你提供的代码）
+      final Uint8List? uint8list = await VideoThumbnail.thumbnailData(
+        video: video.path, // 视频文件路径（参数名是video）
+        imageFormat: ImageFormat.JPEG, // 图像格式
+        maxWidth: 128, // 缩略图最大宽度（高度自动按比例缩放）
+        quality: 25, // 图像质量（0-100，数值越低质量越低）
+      );
+
+      if (uint8list != null) {
+        // 将内存中的缩略图数据写入本地文件
+        await File(thumbnailPath).writeAsBytes(uint8list);
+
+        // 更新视频模型的缩略图路径并保存
+        video.thumbnailPath = thumbnailPath;
+        await video.save();
+
+        return thumbnailPath;
+      }
+    } catch (e) {
+      print('生成缩略图失败: $e');
+    }
+    return null;
+  }
+>>>>>>> master
 }
