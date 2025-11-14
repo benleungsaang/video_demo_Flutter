@@ -6,12 +6,9 @@ import 'package:hive/hive.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_demo/models/video.dart';
 import 'package:video_demo/utils/path_utils.dart';
-<<<<<<< HEAD
-=======
 import 'package:video_thumbnail/video_thumbnail.dart';
-import 'dart:typed_data';
 import 'package:path/path.dart' as p;
->>>>>>> master
+import 'dart:typed_data';
 
 class VideoService {
   // 获取视频数据库表
@@ -106,8 +103,6 @@ class VideoService {
       throw Exception('删除视频失败: $e');
     }
   }
-<<<<<<< HEAD
-=======
 
   // 为视频生成缩略图
   static Future<String?> generateThumbnail(Video video) async {
@@ -148,5 +143,4 @@ class VideoService {
     }
     return null;
   }
->>>>>>> master
 }

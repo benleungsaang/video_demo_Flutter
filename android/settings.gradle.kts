@@ -11,11 +11,6 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-<<<<<<< HEAD
-=======
-        maven { url = uri("https://mirrors.tuna.tsinghua.edu.cn/flutter") }
-        maven { url = uri("https://mirrors.cloud.tencent.com/flutter/") }
->>>>>>> master
         google()
         mavenCentral()
         gradlePluginPortal()
