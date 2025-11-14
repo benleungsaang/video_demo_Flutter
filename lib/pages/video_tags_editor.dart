@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:video_demo/models/video.dart';
 import 'package:video_demo/models/tag.dart';
-import 'package:video_demo/services/tag_service.dart';
+// import 'package:video_demo/services/tag_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:video_demo/services/tag_search_service.dart';
 
 class VideoTagsEditorPage extends StatefulWidget {
   final Video video;
@@ -42,7 +43,7 @@ class _VideoTagsEditorPageState extends State<VideoTagsEditorPage> {
 
   void _loadAllTags() {
     setState(() {
-      _allTags = TagService.getAllTags();
+      _allTags = TagSearchService.getAllTags();
     });
   }
 
@@ -72,7 +73,7 @@ class _VideoTagsEditorPageState extends State<VideoTagsEditorPage> {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    await TagService.setVideoTags(widget.video, _currentTags);
+    await TagSearchService.updateVideoTags(widget.video, _currentTags);
 
     final videoBox = Hive.box<Video>('videos');
     final savedVideo = videoBox.get(widget.video.key);
@@ -207,24 +208,31 @@ class _VideoTagsEditorPageState extends State<VideoTagsEditorPage> {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  childAspectRatio: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
+                child: Wrap(
+                  spacing: 8, // 水平间距（与当前标签一致）
+                  runSpacing: 8, // 垂直间距（与当前标签一致）
                   children: _allTags
                       .where((tag) => !_currentTags.contains(tag.name))
-                      .map((tag) => ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey[200],
-                              foregroundColor: Colors.black87,
+                      .map((tag) => InputChip(
+                            // 使用InputChip替代ElevatedButton
+                            label: Text(
+                              tag.name,
+                              style: const TextStyle(
+                                  color: Colors.black87, fontSize: 18),
                             ),
+                            backgroundColor:
+                                const Color.fromARGB(255, 255, 247, 178),
+                            labelStyle: const TextStyle(color: Colors.black87),
                             onPressed: () {
                               setState(() {
                                 _currentTags.add(tag.name);
                               });
                             },
-                            child: Text(tag.name),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ))
                       .toList(),
                 ),
@@ -239,7 +247,7 @@ class _VideoTagsEditorPageState extends State<VideoTagsEditorPage> {
             height: 50,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+                backgroundColor: const Color.fromARGB(255, 0, 0, 0),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8.0),
                 ),
@@ -251,7 +259,7 @@ class _VideoTagsEditorPageState extends State<VideoTagsEditorPage> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                  color: Color.fromARGB(255, 255, 255, 255),
                 ),
               ),
             ),

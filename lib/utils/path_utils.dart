@@ -12,4 +12,15 @@ class PathUtils {
     }
     return videoDir.path;
   }
+
+// 在 PathUtils 中添加缩略图路径方法
+  static Future<String> getThumbnailDirectory() async {
+    final baseDir = await unifiedVideoDirectory;
+    final thumbDir = Directory('$baseDir/thumbnails');
+    // final thumbDir = Directory('$baseDir/thumbnails');
+    if (!thumbDir.existsSync()) {
+      thumbDir.createSync(recursive: true);
+    }
+    return thumbDir.path;
+  }
 }

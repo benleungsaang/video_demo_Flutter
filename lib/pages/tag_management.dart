@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:video_demo/models/tag.dart';
-import 'package:video_demo/services/tag_service.dart';
+import 'package:flutter/services.dart';
+import 'package:hive/hive.dart';
+import '../services/tag_service.dart';
+import '../models/tag.dart';
 
 class TagManagementPage extends StatefulWidget {
   const TagManagementPage({super.key});
@@ -10,7 +12,8 @@ class TagManagementPage extends StatefulWidget {
 }
 
 class _TagManagementPageState extends State<TagManagementPage> {
-  List<Tag> _allTags = [];
+  late List<Tag> _tags;
+  final TextEditingController _tagController = TextEditingController();
 
   @override
   void initState() {
@@ -18,51 +21,11 @@ class _TagManagementPageState extends State<TagManagementPage> {
     _loadTags();
   }
 
+  // 加载标签数据
   void _loadTags() {
     setState(() {
-      _allTags = TagService.getAllTags();
+      _tags = TagService.getAllTags();
     });
-  }
-
-  void addNewTag() async {
-    String? tagName = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        TextEditingController controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('添加标签'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(hintText: '输入标签名称'),
-            onSubmitted: (value) => Navigator.pop(context, value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('添加'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (tagName != null && tagName.isNotEmpty) {
-      if (!Tag.isValidName(tagName)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('标签名称包含无效字符')),
-          );
-        }
-        return;
-      }
-
-      await TagService.addTag(tagName);
-      _loadTags();
-    }
   }
 
   @override
@@ -71,52 +34,59 @@ class _TagManagementPageState extends State<TagManagementPage> {
       appBar: AppBar(
         title: const Text('标签管理'),
       ),
-      body: _allTags.isEmpty
-          ? const Center(child: Text('暂无标签，请添加标签'))
-          : ListView.builder(
-              itemCount: _allTags.length,
+      body: _tags.isEmpty
+          ? const Center(
+              child: Text(
+                '暂无标签',
+                style: TextStyle(color: Colors.grey, fontSize: 16),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              // 使用分隔线构建器，添加浅色分隔线
+              separatorBuilder: (context, index) => Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 16,
+                endIndent: 16,
+                color: Colors.grey[200], // 浅灰色分隔线
+              ),
+              itemCount: _tags.length,
               itemBuilder: (context, index) {
-                Tag tag = _allTags[index];
+                final tag = _tags[index];
                 return ListTile(
-                  title: Text(tag.name),
-                  subtitle: Text('使用次数: ${tag.usageCount}'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () async {
-                      bool? confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('确认删除'),
-                          content: Text('确定要删除标签 "${tag.name}" 吗？'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('删除'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: Colors.red,
-                              ),
-                            ),
-                          ],
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  title: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        tag.name,
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      // 显示标签使用次数
+                      Text(
+                        '使用 ${tag.usageCount} 次',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
                         ),
-                      );
-
-                      if (confirm == true) {
-                        await TagService.deleteTag(tag);
-                        _loadTags();
-                      }
-                    },
+                      ),
+                    ],
                   ),
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: addNewTag,
-        child: const Icon(Icons.add),
-      ),
+      // 去除原来的FloatingActionButton（添加按钮）
+      // 整合添加功能：可在视频详情页添加，或在标签管理页通过下拉菜单实现
     );
+  }
+
+  @override
+  void dispose() {
+    _tagController.dispose();
+    super.dispose();
   }
 }

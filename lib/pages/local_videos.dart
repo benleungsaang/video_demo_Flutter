@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:video_demo/models/video.dart';
 import 'package:video_demo/services/video_service.dart';
-import 'package:video_demo/pages/video_tags_editor.dart';
 import 'dart:io';
 import 'package:video_demo/pages/video_player_page.dart';
+import 'package:video_demo/services/tag_search_service.dart';
 
 class LocalVideosPage extends StatefulWidget {
   const LocalVideosPage({super.key});
@@ -14,17 +14,21 @@ class LocalVideosPage extends StatefulWidget {
 }
 
 class _LocalVideosPageState extends State<LocalVideosPage> {
-  // 原始视频列表（存储所有视频）
   List<Video> _videos = [];
-  // 过滤后的视频列表（用于展示搜索结果）
   List<Video> _filteredVideos = [];
-  // 加载状态标识
   bool isLoading = false;
-  // 搜索框控制器，用于获取输入内容
   final TextEditingController _searchController = TextEditingController();
+  int _columnCount = 1;
 
-  // 加载视频缩略图
+  // 核心约束配置
+  final double _maxImageHeight = 200; // 图片最大高度
+  final double _maxSingleColumnWidth = 600; // 单列最大宽度
+  final double _innerSpacing = 6; // 卡片内部元素间距
+  final double _cardSpacing = 10; // 卡片之间的间距
+  final double _cardPadding = 8; // 卡片内边距
+
   Future<void> _loadThumbnail(Video video) async {
+    // 仅在缩略图不存在时生成，不阻塞UI
     if (video.thumbnailPath == null ||
         !await File(video.thumbnailPath!).exists()) {
       await VideoService.generateThumbnail(video);
@@ -37,75 +41,54 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
   @override
   void initState() {
     super.initState();
-    // 页面初始化时加载所有视频
     loadVideos();
+    VideoService.videosNotifier.addListener(_onVideosChanged);
+  }
+
+  void _onVideosChanged() {
+    if (mounted) {
+      setState(() {
+        _videos = VideoService.getAllVideos();
+        _filteredVideos = List.from(_videos);
+      });
+    }
   }
 
   @override
   void dispose() {
-    // 释放搜索控制器资源
     _searchController.dispose();
+    VideoService.videosNotifier.removeListener(_onVideosChanged);
     super.dispose();
   }
 
-  // 加载视频列表
   void loadVideos() async {
-    // 显示加载状态
     setState(() {
       isLoading = true;
     });
 
-    // 从数据库获取最新视频列表
     final videoBox = Hive.box<Video>('videos');
     final videos = videoBox.values.toList();
 
-    // 更新视频列表并隐藏加载状态
     setState(() {
       _videos = videos;
-      // 初始时显示所有视频
       _filteredVideos = List.from(_videos);
       isLoading = false;
     });
   }
 
-  // 执行搜索逻辑（按回车或点击按钮时调用）
   void _performSearch() {
-    // 获取搜索关键词并标准化（转为小写、去除空格）
-    final query = _searchController.text.toLowerCase().trim();
-
-    // 如果搜索词为空，显示所有视频
-    if (query.isEmpty) {
-      setState(() {
-        _filteredVideos = List.from(_videos);
-      });
-      return;
-    }
-
-    // 根据搜索词过滤视频
+    final query = _searchController.text;
     setState(() {
-      _filteredVideos = _videos.where((video) {
-        // 检查视频标题是否包含搜索词（不区分大小写）
-        final titleMatches = video.name.toLowerCase().contains(query);
-
-        // 检查视频标签是否包含搜索词（不区分大小写）
-        final tagMatches =
-            video.tags.any((tag) => tag.toLowerCase().contains(query));
-
-        // 标题或标签匹配则保留该视频
-        return titleMatches || tagMatches;
-      }).toList();
+      _filteredVideos = TagSearchService.searchVideos(query);
     });
   }
 
-  // 选择并添加视频
   void pickAndAddVideo() async {
     Video? video = await VideoService.pickSingleVideo();
     if (video != null) {
       await VideoService.saveVideo(video);
-      // 添加后重新加载列表
       loadVideos();
       if (mounted) {
-        // 确保页面还在的情况下显示提示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('添加视频成功: ${video.name}')),
         );
@@ -113,22 +96,223 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
     }
   }
 
-  // 格式化时长显示（将秒转换为分:秒格式）
   String formatDuration(int seconds) {
     int minutes = seconds ~/ 60;
     int remainingSeconds = seconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
-  // 从第n个斜杠开始截取路径（简化路径显示）
-  String getPathFromNthSlash(String fullPath, int n) {
-    final separator = fullPath.contains('/') ? '/' : '\\';
-    List<String> pathParts = fullPath.split(separator);
-    // 确保索引不越界
-    if (n >= pathParts.length) return fullPath;
+  String _formatTags(List<String> tags) {
+    if (tags.isEmpty) return '';
+    return tags.join('、');
+  }
 
-    // 从第n个部分开始拼接
-    return pathParts.sublist(n).join(separator);
+  Widget _buildVideoItem(Video video) {
+    // 缩略图生成逻辑（仅触发不等待）
+    if (video.thumbnailPath == null ||
+        !File(video.thumbnailPath!).existsSync()) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _loadThumbnail(video));
+    }
+
+    // 根据列数动态调整文本大小
+    final double titleSize =
+        _columnCount == 1 ? 16 : (_columnCount == 2 ? 14 : 12);
+    final double infoSize =
+        _columnCount == 1 ? 12 : (_columnCount == 2 ? 11 : 10);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          margin: EdgeInsets.zero, // 清除默认外边距
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => VideoPlayerPage(video: video),
+                ),
+              );
+              loadVideos();
+            },
+            child: Padding(
+              padding: EdgeInsets.all(_cardPadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min, // 高度由内容决定
+                children: [
+                  // 视频缩略图（居中显示）
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: _maxImageHeight,
+                          maxWidth: constraints.maxWidth - _cardPadding * 2,
+                        ),
+                        child: AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: video.thumbnailPath != null &&
+                                  File(video.thumbnailPath!).existsSync()
+                              ? Image.file(
+                                  File(video.thumbnailPath!),
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                )
+                              : const Center(
+                                  child: Text(
+                                    '缩略图待生成',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: _innerSpacing),
+
+                  // 标题行
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          video.name,
+                          style: TextStyle(
+                            fontSize: titleSize,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      PopupMenuButton<int>(
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        padding: EdgeInsets.zero,
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 1,
+                            child: const Row(
+                              children: [
+                                Icon(Icons.delete, color: Colors.red, size: 18),
+                                SizedBox(width: 8),
+                                Text("删除"),
+                              ],
+                            ),
+                            onTap: () async {
+                              await Future.delayed(Duration.zero);
+                              bool? confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('确认删除'),
+                                  content: Text('确定要删除视频 "${video.name}" 吗？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('取消'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('删除'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirm == true) {
+                                await VideoService.deleteVideo(video);
+                                loadVideos();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text('已删除: ${video.name}')),
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  // 信息行（合并显示避免溢出）
+                  Padding(
+                    padding: EdgeInsets.only(top: _innerSpacing / 2),
+                    child: Text(
+                      [
+                        '时长: ${formatDuration(video.duration)}',
+                        '大小: ${_formatFileSize(video)}',
+                        if (video.tags.isNotEmpty)
+                          '标签: ${_formatTags(video.tags)}'
+                      ].join(' | '),
+                      style: TextStyle(
+                        fontSize: infoSize,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatFileSize(Video video) {
+    try {
+      final file = File(video.path);
+      if (file.existsSync()) {
+        final sizeInBytes = file.lengthSync();
+        final sizeInMB = sizeInBytes / (1024 * 1024);
+        return '${sizeInMB.toStringAsFixed(1)}MB';
+      }
+      return '未知';
+    } catch (e) {
+      return '未知';
+    }
+  }
+
+  Widget _buildColumnSwitcher() {
+    return SegmentedButton(
+      segments: const [
+        ButtonSegment(
+          value: 1,
+          label: Text('单列'),
+          icon: Icon(Icons.view_list),
+        ),
+        ButtonSegment(
+          value: 2,
+          label: Text('双列'),
+          icon: Icon(Icons.grid_view_rounded),
+        ),
+        ButtonSegment(
+          value: 3,
+          label: Text('三列'),
+          icon: Icon(Icons.grid_3x3),
+        ),
+      ],
+      selected: {_columnCount},
+      onSelectionChanged: (value) {
+        setState(() {
+          _columnCount = value.first;
+        });
+      },
+    );
   }
 
   @override
@@ -139,167 +323,77 @@ class _LocalVideosPageState extends State<LocalVideosPage> {
       ),
       body: Column(
         children: [
-          // 搜索框区域
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
+            child: Column(
               children: [
-                // 搜索输入框
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: const InputDecoration(
-                      hintText: '搜索视频标题或标签...',
-                      prefixIcon: Icon(Icons.search), // 搜索图标
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(8.0)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: const InputDecoration(
+                          hintText: '搜索视频标题或标签...',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.all(Radius.circular(8.0)),
+                          ),
+                        ),
+                        onSubmitted: (_) => _performSearch(),
                       ),
                     ),
-                    // 按回车键触发搜索
-                    onSubmitted: (_) => _performSearch(),
-                  ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _performSearch,
+                      child: const Text('搜索'),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8), // 输入框和按钮间距
-                // 搜索按钮
-                ElevatedButton(
-                  onPressed: _performSearch,
-                  child: const Text('搜索'),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildColumnSwitcher(),
                 ),
               ],
             ),
           ),
-
-          // 视频列表区域
           Expanded(
             child: isLoading
-                ? const Center(child: CircularProgressIndicator()) // 加载中显示进度条
+                ? const Center(child: CircularProgressIndicator())
                 : _filteredVideos.isEmpty
-                    ? const Center(child: Text('没有找到匹配的视频')) // 无结果提示
-                    : ListView.builder(
+                    ? const Center(child: Text('没有找到匹配的视频'))
+                    : GridView.builder(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: _cardSpacing,
+                        ),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: _columnCount,
+                          crossAxisSpacing: _cardSpacing,
+                          mainAxisSpacing: _cardSpacing,
+                          // 动态调整宽高比，避免高度冗余
+                          childAspectRatio: _columnCount == 1 ? 2.5 : 1,
+                        ),
                         itemCount: _filteredVideos.length,
                         itemBuilder: (context, index) {
-                          Video video = _filteredVideos[index];
-
-                          // 加载缩略图
-                          _loadThumbnail(video);
-
-                          return InkWell(
-                            // 点击视频项跳转到播放页面
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    VideoPlayerPage(video: video),
+                          final video = _filteredVideos[index];
+                          if (_columnCount == 1) {
+                            return Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: _maxSingleColumnWidth,
+                                ),
+                                child: _buildVideoItem(video),
                               ),
-                            ),
-                            child: ListTile(
-                              // 显示视频缩略图
-                              leading: SizedBox(
-                                width: 80,
-                                height: 45,
-                                child: video.thumbnailPath != null
-                                    ? Image.file(
-                                        File(video.thumbnailPath!),
-                                        fit: BoxFit.cover,
-                                      )
-                                    : const Center(
-                                        child: CircularProgressIndicator()),
-                              ),
-                              title: Text(video.name),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                      '格式: ${video.format} | 时长: ${formatDuration(video.duration)} | ${getPathFromNthSlash(video.path, 6)} '),
-                                  if (video.tags.isNotEmpty)
-                                    Wrap(
-                                      spacing: 4,
-                                      children: video.tags
-                                          .map((tag) => Chip(
-                                                label: Text(tag),
-                                                backgroundColor:
-                                                    Colors.blue[100],
-                                                labelStyle: const TextStyle(
-                                                    fontSize: 12),
-                                              ))
-                                          .toList(),
-                                    ),
-                                ],
-                              ),
-                              // 编辑标签按钮
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit,
-                                        color: Colors.blue),
-                                    onPressed: () async {
-                                      final result = await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              VideoTagsEditorPage(video: video),
-                                        ),
-                                      );
-                                      if (result == true) {
-                                        loadVideos(); // 编辑后刷新列表
-                                      }
-                                    },
-                                  ),
-                                  // 删除视频按钮
-                                  IconButton(
-                                    icon: const Icon(Icons.delete,
-                                        color: Colors.red),
-                                    onPressed: () async {
-                                      // 保持原有的删除逻辑不变
-                                      bool? confirm = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: const Text('确认删除'),
-                                          content: Text(
-                                              '确定要删除视频 "${video.name}" 吗？'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, false),
-                                              child: const Text('取消'),
-                                            ),
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, true),
-                                              child: const Text('删除'),
-                                              style: TextButton.styleFrom(
-                                                foregroundColor: Colors.red,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-
-                                      if (confirm == true) {
-                                        await VideoService.deleteVideo(video);
-                                        loadVideos(); // 删除后刷新列表
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                                content:
-                                                    Text('已删除: ${video.name}')),
-                                          );
-                                        }
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
+                            );
+                          }
+                          return _buildVideoItem(video);
+                        },
+                      ),
           ),
         ],
       ),
-      // 添加视频的浮动按钮
       floatingActionButton: FloatingActionButton(
         onPressed: pickAndAddVideo,
         child: const Icon(Icons.add),

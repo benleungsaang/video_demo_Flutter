@@ -9,10 +9,13 @@ import 'package:video_demo/utils/path_utils.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path/path.dart' as p;
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 class VideoService {
   // 获取视频数据库表
   static Box<Video> get videoBox => Hive.box<Video>('videos');
+  static final ValueNotifier<List<Video>> _videosNotifier = ValueNotifier([]);
+  static ValueNotifier<List<Video>> get videosNotifier => _videosNotifier;
 
   // 选择单个视频文件
   static Future<Video?> pickSingleVideo() async {
@@ -67,11 +70,14 @@ class VideoService {
   // 保存视频到数据库
   static Future<void> saveVideo(Video video) async {
     await videoBox.add(video);
+    getAllVideos(); // 触发通知
   }
 
   // 获取所有视频
   static List<Video> getAllVideos() {
-    return videoBox.values.toList();
+    final videos = videoBox.values.toList();
+    _videosNotifier.value = videos; // 通知监听器
+    return videos;
   }
 
   // 给视频添加标签
@@ -124,8 +130,8 @@ class VideoService {
       final Uint8List? uint8list = await VideoThumbnail.thumbnailData(
         video: video.path, // 视频文件路径（参数名是video）
         imageFormat: ImageFormat.JPEG, // 图像格式
-        maxWidth: 128, // 缩略图最大宽度（高度自动按比例缩放）
-        quality: 25, // 图像质量（0-100，数值越低质量越低）
+        maxWidth: 400, // 缩略图最大宽度（高度自动按比例缩放）
+        quality: 30, // 图像质量（0-100，数值越低质量越低）
       );
 
       if (uint8list != null) {

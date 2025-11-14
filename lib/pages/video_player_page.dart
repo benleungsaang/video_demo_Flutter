@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:video_demo/models/video.dart';
+import 'package:video_demo/services/tag_search_service.dart';
+import 'package:video_demo/models/tag.dart';
 
 class OptimizedVideoPlayer extends StatefulWidget {
   final String videoUrl;
@@ -40,6 +42,7 @@ class _OptimizedVideoPlayerState extends State<OptimizedVideoPlayer> {
     );
 
     _initializeVideoPlayerFuture = _controller.initialize().then((_) {
+      print('视频初始化完成 - URL: ${widget.videoUrl}');
       // 1. 初始化完成后自动播放
       _controller.play();
       setState(() {
@@ -129,19 +132,27 @@ class _OptimizedVideoPlayerState extends State<OptimizedVideoPlayer> {
       widget.onFullScreenChanged(_isFullScreen);
 
       if (_isFullScreen) {
+        // 进入全屏逻辑保持不变
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ]);
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       } else {
-        // 修复全屏退出后界面异常
+        // 退出全屏的修复逻辑 - 不使用延迟刷新
+        // 1. 恢复系统UI和方向
         SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        // 强制刷新界面尺寸
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.manual,
+          overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+        );
+
+        // 2. 使用 GlobalKey 强制重建父级页面布局
+        // 通过回调通知父组件触发重建
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            setState(() {});
+            // 通知父组件刷新
+            widget.onFullScreenChanged(_isFullScreen);
           }
         });
       }
@@ -363,11 +374,7 @@ class _OptimizedVideoPlayerState extends State<OptimizedVideoPlayer> {
 
 class VideoPlayerPage extends StatefulWidget {
   final Video video;
-
-  const VideoPlayerPage({
-    super.key,
-    required this.video,
-  });
+  const VideoPlayerPage({super.key, required this.video});
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -375,31 +382,168 @@ class VideoPlayerPage extends StatefulWidget {
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
   bool _isFullScreen = false;
-  final GlobalKey<_OptimizedVideoPlayerState> _optimizedVideoPlayerKey =
-      GlobalKey();
+  // 添加一个用于强制重建的key
+  final GlobalKey _playerKey = GlobalKey();
+  final GlobalKey _pageKey = GlobalKey();
+
+  void _handleFullScreenChange(bool isFull) {
+    setState(() {
+      _isFullScreen = isFull;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: _isFullScreen ? null : AppBar(title: Text(widget.video.name)),
-      // 点击整个页面任意位置都能激活控制栏
-      body: GestureDetector(
-        onTap: () {
-          if (mounted) {
-            _optimizedVideoPlayerKey.currentState?._toggleControls();
-          }
+      key: _pageKey,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return Column(
+            children: [
+              if (!_isFullScreen)
+                AppBar(
+                  title: Text(widget.video.name),
+                ),
+              Expanded(
+                child: KeyedSubtree(
+                  key: ValueKey(_isFullScreen),
+                  child: OptimizedVideoPlayer(
+                    key: _playerKey,
+                    videoUrl: widget.video.path,
+                    onFullScreenChanged: _handleFullScreenChange,
+                  ),
+                ),
+              ),
+              // 标签编辑区域（非全屏状态显示）
+              if (!_isFullScreen) _buildVideoTagsEditor(),
+            ],
+          );
         },
-        child: Container(
-          color: _isFullScreen ? Colors.black : null,
-          child: OptimizedVideoPlayer(
-            key: _optimizedVideoPlayerKey,
-            videoUrl: widget.video.path,
-            onFullScreenChanged: (isFull) {
-              setState(() => _isFullScreen = isFull);
-            },
-          ),
-        ),
       ),
     );
+  }
+
+// 标签编辑区域组件（适配TagSearchService）
+  Widget _buildVideoTagsEditor() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '视频标签',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          // 添加新标签的输入框
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _tagController,
+                  decoration: InputDecoration(
+                    hintText: '添加新标签',
+                    border: const OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _addTagToVideo(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _addTagToVideo,
+                child: const Text('添加'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 当前标签展示（支持删除）
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: widget.video.tags
+                .map((tag) => Chip(
+                      label: Text(tag),
+                      backgroundColor: const Color.fromARGB(255, 200, 197, 255),
+                      labelStyle: const TextStyle(color: Colors.black87),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () async {
+                        // 通过TagSearchService更新视频标签（移除标签）
+                        final newTags = List<String>.from(widget.video.tags)
+                          ..remove(tag);
+                        await TagSearchService.updateVideoTags(
+                            widget.video, newTags);
+                        setState(() {}); // 刷新UI
+                      },
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 16),
+          // 推荐标签（从TagSearchService获取）
+          const Text(
+            '推荐标签',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          FutureBuilder<List<Tag>>(
+            future: _loadRecommendedTags(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) {
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: snapshot.data!
+                      .where((tag) => !widget.video.tags.contains(tag.name))
+                      .map((tag) => InputChip(
+                            // 与当前标签样式完全统一
+                            label: Text(tag.name),
+                            backgroundColor:
+                                const Color.fromARGB(255, 212, 212, 212),
+                            labelStyle: const TextStyle(color: Colors.black87),
+                            onPressed: () async {
+                              // 通过TagSearchService更新视频标签（添加标签）
+                              final newTags =
+                                  List<String>.from(widget.video.tags)
+                                    ..add(tag.name);
+                              await TagSearchService.updateVideoTags(
+                                  widget.video, newTags);
+                              setState(() {}); // 刷新UI
+                            },
+                          ))
+                      .toList(),
+                );
+              }
+              return const SizedBox();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+// 新增相关变量和方法（适配TagSearchService）
+  final TextEditingController _tagController = TextEditingController();
+
+// 从服务获取推荐标签（按使用次数排序）
+  Future<List<Tag>> _loadRecommendedTags() async {
+    return TagSearchService.getAllTags();
+  }
+
+// 添加新标签（通过服务处理）
+  Future<void> _addTagToVideo() async {
+    final tagText = _tagController.text.trim();
+    if (tagText.isNotEmpty && !widget.video.tags.contains(tagText)) {
+      // 通过TagSearchService统一处理标签添加和视频标签更新
+      final newTags = List<String>.from(widget.video.tags)..add(tagText);
+      await TagSearchService.updateVideoTags(widget.video, newTags);
+      _tagController.clear();
+      setState(() {}); // 刷新UI
+    }
+  }
+
+// 释放资源
+  @override
+  void dispose() {
+    _tagController.dispose();
+    super.dispose();
   }
 }

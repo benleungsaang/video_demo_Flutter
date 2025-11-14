@@ -46,6 +46,7 @@ dependencies:
   path_provider: ^2.0.15
   # 网络相关
   connectivity_plus: ^4.0.1
+  network_info_plus: ^7.0.0
   # 状态管理
   provider: ^6.0.5
   # 服务器框架
